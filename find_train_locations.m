@@ -5,7 +5,7 @@ load('mds_train.mat')
 %% Define the distance/time matrix
 D = time_matrix.^2;
 n = size(D,1);
-lambda = 1; 
+lambda = 0.29; 
 
 %% Get estimated coordinates 
 
@@ -59,11 +59,12 @@ hold off;
 %% Justify choosing lambda
 
 % Define a range of lambda values
-lambda_values = linspace(0.1, 1, 20); 
+lambda_values = linspace(0.1, 1, 10); 
 
 % Call the function to evaluate and plot error
 figure(2)
-plot_error_vs_lambda(lambda_values, D, coords, n);
+plot_eigenvalues_vs_lambda(lambda_values, D, n);
+%plot_error_vs_lambda(lambda_values, D, coords, n);
 
 
 %% Define functions 
@@ -109,10 +110,11 @@ function X = sdr(D, n, lambda)
         variable H(n-1, n-1) symmetric
         G = V*H*V';
         edm = diag(G)*e' + e*diag(G)' - 2*G;
-        maximize (trace(H) - lambda*norm((edm-D), 'fro'));
+        minimize (trace(H) + lambda*norm((edm-D), 'fro'));
         subject to 
             H >= 0;
     cvx_end
+    H
 
     X = get_X_from_XX(G);
 end
@@ -142,4 +144,38 @@ function plot_error_vs_lambda(lambda_values, D, coords, n)
     title('Error vs. \lambda');
     legend('Reconstruction Error');
 
+end
+
+% Eigenvalues vs. lambda (log scale)
+function plot_eigenvalues_vs_lambda(lambda_values, D, n)
+    % Loop over lambda values
+    figure;
+    hold on;
+    for i = 1:length(lambda_values)
+        lambda = lambda_values(i);
+        
+        % Estimate coordinates using SDR
+        X_sdr = sdr(D, n, lambda);
+        
+        % Compute the Gram matrix X_sdr * X_sdr'
+        Gram_matrix = X_sdr' * X_sdr;
+        
+        % Compute eigenvalues of the Gram matrix
+        eigenvalues = eig(Gram_matrix);
+        
+        % Sort eigenvalues in descending order
+        eigenvalues_sorted = sort(eigenvalues, 'descend');
+        
+        % Plot eigenvalues on a log scale
+        semilogy(1:length(eigenvalues_sorted), eigenvalues_sorted, 'o-', 'LineWidth', 2, ...
+                 'DisplayName', ['\lambda = ' num2str(lambda)]);
+    end
+    hold off;
+    
+    % Add grid, labels, and legend
+    grid on;
+    xlabel('Index of Eigenvalue');
+    ylabel('Eigenvalue (Log Scale)');
+    title('Eigenvalues of Gram Matrix vs. \lambda');
+    legend('show');
 end
