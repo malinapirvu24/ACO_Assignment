@@ -1,6 +1,6 @@
 %% Load dataset
-
 load('mds_train.mat')
+functions = common_functions;
 
 %% Define the distance/time matrix
 D = time_matrix.^2;
@@ -8,76 +8,39 @@ n = size(D,1);
 lambda = 0.29; 
 
 %% Get estimated coordinates 
-
-X_sdr = sdr(D, n, lambda);
+[G_sdr, X_sdr] = sdr(D, n, lambda);
 X_mds = mds(D, n);
 
 %% Perform Procrustes rotation
-
 [Dt,X_mds] = procrustes(coords, X_mds');
 [Dt,X_sdr] = procrustes(coords, X_sdr');
 
 %% Plot True and Estimated Coordinates on a Map of the Netherlands
-
-lon_true = coords(:, 1); % Longitude
-lat_true = coords(:, 2); % Latitude
-lon_mds = X_mds(:,1); lat_mds = X_mds(:,2);
-lon_sdr = X_sdr(:,1); lat_sdr = X_sdr(:,2);
-
-
-% Create geographic axes
-figure;
-gx = geoaxes; % Geographic axes
-geobasemap('grayland'); 
-
-% Plot the true locations
-geoplot(lat_true, lon_true, 'rx', 'LineWidth', 2, 'MarkerSize', 8);
-hold on;
-
-% Plot the MDS and SDR estimated locations
-geoplot(lat_mds, lon_mds, 'bo', 'LineWidth', 2, 'MarkerSize', 8);
-geoplot(lat_sdr, lon_sdr, 'go', 'LineWidth', 2, 'MarkerSize', 8);
-
-% Add labels for true locations
-for i = 1:length(lat_true)
-    text(lat_true(i), lon_true(i), station_index{i}, ...
-        'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
-        'FontSize', 8, 'Color', 'black');
-end
-
-% Add legend
-legend(["True Locations", "MDS Estimated Locations", "SDR Estimated Locations"], ...
-       'Location', 'bestoutside');
-
-% Set geographic limits to focus on the Netherlands
-geolimits([50.5 53.7], [3.3 7.5]);
-
-title('True and Estimated Locations on the Map of the Netherlands');
-hold off;
-
+label1 = "MDS Estimated Locations";
+label2 = "SDR Estimated Locations";
+functions.plot_locations(coords, station_index, X_mds, X_sdr, label1, label2);
 
 %% Justify choosing lambda
 
 % Define a range of lambda values
 lambda_values = linspace(0.1, 1, 10); 
+G_lambda = zeros(n,n,size(lambda_values,2));
+X_lambda = zeros(2,n,size(lambda_values,2));
+
+for i = 1:length(lambda_values)
+    lambda = lambda_values(i); 
+    % Estimate coordinates using SDR
+    [G_lambda(:,:,i), X_lambda(:,:,i)] = sdr(D, n, lambda);
+end
 
 % Call the function to evaluate and plot error
 figure(2)
-plot_eigenvalues_vs_lambda(lambda_values, D, n);
-%plot_error_vs_lambda(lambda_values, D, coords, n);
+plot_eigenvalues_vs_lambda(G_lambda, lambda_values);
 
+figure(3)
+plot_error_vs_lambda(X_lambda, coords, lambda_values);
 
 %% Define functions 
-
-% Perform singular value decomposition
-% eigenvalues of G are real, and in the PSD case, they are non-negative
-% eigenvalues  = singular values
-function X = get_X_from_XX(XX)
-    [U, S, V] = svd(XX);
-    S = S(:, 1:2);
-    X = sqrt(S')*V';
-end
-
 
 % MDS algorithm
 % Find matrix of coordinates from the EDM using multi-dimensional scaling
@@ -87,18 +50,9 @@ function X = mds(edm, n)
     X = get_X_from_XX(XX);
 end
 
-function X = mds_diff_approach(D, n)
-    n = size(D, 1);
-    J = eye(n) - ones(n)/n;                   % Centering matrix
-    G = -0.5 * J * (D.^2) * J;                % Gram matrix
-    X = get_X_from_XX(D);
-end
-
-
-
 % SDR problem
 % Semi-definite relaxation problem to complete an EDM - see EDM paper
-function X = sdr(D, n, lambda)
+function [G, X] = sdr(D, n, lambda)
     % Some variables needed for the convex problem
     x = -1/(n+sqrt(n));
     y = -1/sqrt(n);
@@ -114,26 +68,20 @@ function X = sdr(D, n, lambda)
         subject to 
             H >= 0;
     cvx_end
-    H
 
-    X = get_X_from_XX(G);
+    X = functions.get_X_from_XX(G);
 end
 
 
 % Error vs. lambda
-function plot_error_vs_lambda(lambda_values, D, coords, n)
+function plot_error_vs_lambda(X_lambda, coords, lambda_values)
 
+    errors = zeros(size(lambda_values));
     for i = 1:length(lambda_values)
-        lambda = lambda_values(i);
-        
-        % Estimate coordinates using SDR
-        X_sdr = sdr(D, n, lambda);
-        
         % Compute the Procrustes transformation to align the estimated coordinates
-        [~, X_sdr_aligned] = procrustes(coords, X_sdr');
-        
+        [~, X_aligned] = procrustes(coords, X_lambda(:,:,i)');
         % Calculate the reconstruction error using true coordinates
-        errors(i) = norm(coords - X_sdr_aligned, 'fro'); % Frobenius norm of the difference
+        errors(i) = norm(coords - X_aligned, 'fro'); % Frobenius norm of the difference
     end
     
     % Plot the error 
@@ -147,27 +95,27 @@ function plot_error_vs_lambda(lambda_values, D, coords, n)
 end
 
 % Eigenvalues vs. lambda (log scale)
-function plot_eigenvalues_vs_lambda(lambda_values, D, n)
+function plot_eigenvalues_vs_lambda(G_lambda, lambda_values)
     % Loop over lambda values
-    figure;
     hold on;
     for i = 1:length(lambda_values)
         lambda = lambda_values(i);
-        
-        % Estimate coordinates using SDR
-        X_sdr = sdr(D, n, lambda);
-        
-        % Compute the Gram matrix X_sdr * X_sdr'
-        Gram_matrix = X_sdr' * X_sdr;
-        
+
         % Compute eigenvalues of the Gram matrix
-        eigenvalues = eig(Gram_matrix);
+        eigenvalues = abs(eig(G_lambda(:,:,i)));
         
         % Sort eigenvalues in descending order
         eigenvalues_sorted = sort(eigenvalues, 'descend');
-        
+        normalize_eigenvalues_sorted = eigenvalues_sorted/(sum(eigenvalues_sorted));
+
+        if (mod(i,2) == 0)
+            line = 'o-.';
+        else
+            line = '^-';
+        end
+
         % Plot eigenvalues on a log scale
-        semilogy(1:length(eigenvalues_sorted), eigenvalues_sorted, 'o-', 'LineWidth', 2, ...
+        semilogy(1:length(normalize_eigenvalues_sorted), normalize_eigenvalues_sorted, line, 'LineWidth', 2, ...
                  'DisplayName', ['\lambda = ' num2str(lambda)]);
     end
     hold off;
@@ -175,7 +123,8 @@ function plot_eigenvalues_vs_lambda(lambda_values, D, n)
     % Add grid, labels, and legend
     grid on;
     xlabel('Index of Eigenvalue');
-    ylabel('Eigenvalue (Log Scale)');
+    ylabel('Eigenvalues (absolute value, normalized, log scale)');
     title('Eigenvalues of Gram Matrix vs. \lambda');
+    set(gca, 'YScale', 'log')
     legend('show');
 end
