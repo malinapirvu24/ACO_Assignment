@@ -1,7 +1,5 @@
 %% Load dataset
-
 load('mds_train.mat')
-functions = common_functions;
 
 %% Define variables
 n = 5;
@@ -11,8 +9,9 @@ V = [y*ones(1,n-1);x*ones(n-1)+eye(n-1)];
 D = time_matrix.^2;
 
 lambda = 0.5;
-alpha = 0.01;
-max_iter = 10000000;
+alpha = 0.1;
+max_iter = 100000;
+threshold = 5e-6;
 
 H_original = eye(4,4);
 G = V*H_original*V';
@@ -21,18 +20,26 @@ X_original = functions.get_X_from_XX(G);
 error_original = norm(coords - X_original, 'fro');
 
 %% Function call
-[H, error_vals, k_vals] = sgd(H_original, D, V, lambda, alpha, max_iter, coords);
+[H, error_vals, k_vals] = sgd(H_original, D, V, lambda, alpha, max_iter, coords, threshold);
 G = V*H*V';
 X_descent = functions.get_X_from_XX(G);
 [Dt,X_descent] = procrustes(coords, X_descent');
 error_descent = norm(coords - X_descent, 'fro');
 
-%%
-figure(1)
-plot(k_vals, error_vals)
+% Plot True and Estimated Coordinates on a Map of the Netherlands
+common_functions.plot_locations(coords, station_index, X_descent, X_descent, "SGD Estimated Locations", "SGD Estimated Locations")
 
-%% Plot True and Estimated Coordinates on a Map of the Netherlands
-functions.plot_locations(coords, station_index, X_descent, X_descent, "SGD Estimated Locations", "SGD Estimated Locations")
+%% Plot error for different lambda
+figure(2)
+hold on
+lambda_vals = linspace(0.1, 1, 10);
+for i = 1:length(lambda_vals)
+    [H, error_vals, k_vals] = sgd(H_original, D, V, lambda_vals(i), alpha, max_iter, coords, threshold);
+    plot(k_vals, error_vals, 'DisplayName', ['\lambda = ' num2str(lambda_vals(i))]);
+end
+hold off
+legend show
+
 
 %% Define functions
 function subgradient = get_subgradient(H, D, V, lambda)
@@ -43,10 +50,10 @@ function subgradient = get_subgradient(H, D, V, lambda)
     subgradient = eye(n-1, n-1) + V'*(lambda*(edm-D)/norm(edm-D,'fro'))*(2*E-2*eye(n,n))*V;
 end
 
-function [H, error_vals, k_vals] = sgd(H, D, V, lambda, alpha, max_iter, coords)
-    functions = common_functions;
+function [H, error_vals, k_vals] = sgd(H, D, V, lambda, alpha, max_iter, coords, threshold)
     error_vals = [];
     k_vals = [];
+    
     for k = 1:max_iter
         g = get_subgradient(H, D, V, lambda);
         Hnew = H - (alpha/k)*g;
@@ -55,12 +62,18 @@ function [H, error_vals, k_vals] = sgd(H, D, V, lambda, alpha, max_iter, coords)
         % Zero-out negative eigenvalues
         L = max(L, 0); 
         % Project H onto the set of positive semi definite matrices
-        H_psd = Q * L * Q';
-        H = H_psd;
-        % Get the error every 1000 time steps for plotting
-        if (mod(k, 1000) == 1)
+        Hnew_psd = Q * L * Q';
+        
+        % Stopping condition
+        if (norm(H - Hnew_psd, 'fro') < threshold)
+            return
+        end
+        H = Hnew_psd;
+
+        % Get the error every 100 time steps for plotting
+        if (mod(k, 100) == 1)
             G = V*H*V';
-            X_descent = functions.get_X_from_XX(G);
+            X_descent = common_functions.get_X_from_XX(G);
             [Dt,X_descent] = procrustes(coords, X_descent');
             error_vals = [error_vals, norm(coords - X_descent, 'fro')];
             k_vals = [k_vals, k];
