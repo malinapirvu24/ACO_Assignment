@@ -18,7 +18,7 @@ X_mds = mds(D, n);
 %% Plot True and Estimated Coordinates on a Map of the Netherlands
 label1 = "MDS Estimated Locations";
 label2 = "SDR Estimated Locations";
-functions.plot_locations(coords, station_index, X_mds, X_sdr, label1, label2);
+common_functions.plot_locations_general(coords, station_index, X_mds, label1, X_sdr, label2);
 
 %% Justify choosing lambda
 
@@ -47,7 +47,7 @@ plot_error_vs_lambda(X_lambda, coords, lambda_values);
 function X = mds(edm, n) 
     XX = -1/2 * (edm - edm(:, 1) * ones(1, n) - ones(n, 1) * edm(1, :)); 
     % centering operation is included in this formula
-    X = get_X_from_XX(XX);
+    X = common_functions.get_X_from_XX(XX);
 end
 
 % SDR problem
@@ -69,7 +69,7 @@ function [G, X] = sdr(D, n, lambda)
             H >= 0;
     cvx_end
 
-    X = functions.get_X_from_XX(G);
+    X = common_functions.get_X_from_XX(G);
 end
 
 
