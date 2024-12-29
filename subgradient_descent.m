@@ -27,7 +27,7 @@ X_descent = functions.get_X_from_XX(G);
 error_descent = norm(coords - X_descent, 'fro');
 
 % Plot True and Estimated Coordinates on a Map of the Netherlands
-common_functions.plot_locations(coords, station_index, X_descent, X_descent, "SGD Estimated Locations", "SGD Estimated Locations")
+common_functions.plot_locations_general(coords, station_index, X_descent, "SGD Estimated Locations")
 
 %% Plot error for different lambda
 figure(2)
