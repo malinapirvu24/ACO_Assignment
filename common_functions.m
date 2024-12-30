@@ -4,14 +4,34 @@ classdef common_functions
 
         %% Perform singular value decomposition
         % eigenvalues of G are real, and in the PSD case, they are non-negative
-        % eigenvalues  = singular values
+        % square root of the eigenvalues
 
         function X = get_X_from_XX(XX)
-            [U, S, V] = svd(XX);
-            S = S(:, 1:2);
-            X = sqrt(S')*V';
-        end
+            % Perform Eigenvalue Decomposition (EVD)
+            [U, D] = eig(XX);
+            lambda = diag(D);
 
+            % Sort eigenvalues and eigenvectors in descending order
+            [lambda, idx] = sort(lambda, 'descend');
+            U = U(:, idx);
+
+            % Take the top 2 eigenvalues
+            d = 2;
+            lambda_d = lambda(1:d);
+            U_d = U(:, 1:d);
+
+            % Compute the square root of the eigenvalues
+            sqrt_lambda_d = sqrt(lambda_d);
+
+            % Create the diagonal matrix with square root of eigenvalues
+            S_d = diag(sqrt_lambda_d);
+
+            % Zero matrix for remaining dimensions
+            n = size(XX, 1);
+            Z = zeros(d, n - d);
+
+            X = [S_d, Z] * U';
+        end
 
         %% General plotting function using varargin
 
@@ -35,7 +55,7 @@ classdef common_functions
                     'FontSize', 8, 'Color', 'black');
             end
 
-            % Process varargin 
+            % Process varargin
             num_inputs = length(varargin);
             assert(mod(num_inputs, 2) == 0, 'Arguments must be in coordinate-label pairs.');
 
