@@ -5,7 +5,7 @@ functions = common_functions;
 %% Define the distance/time matrix
 D = time_matrix.^2;
 n = size(D,1);
-lambda = 0.29; 
+lambda = 0.3; 
 
 %% Get estimated coordinates 
 [G_sdr, X_sdr] = sdr(D, n, lambda);
