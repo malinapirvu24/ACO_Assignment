@@ -8,10 +8,11 @@ x = -1/(n+sqrt(n));
 y = -1/sqrt(n);
 D = time_matrix.^2;
 
-lambda = 0.3;
-alpha = 0.2;
-max_iter = 100000;
+lambda = .4;
+alpha = 1;
+max_iter = 10000;
 threshold = 1e-10;
+threshold2 = 5;
 
 G_original = eye(n,n);
 X_original = functions.get_X_from_XX(G_original);
@@ -19,38 +20,55 @@ X_original = functions.get_X_from_XX(G_original);
 error_original = norm(coords - X_original, 'fro');
 
 %% Function call
-[G, function_vals, k_vals, k, converged] = gd(G_original, D, lambda, alpha, max_iter, threshold);
+tic
+[G, function_vals, k_vals, k, converged] = gd(G_original, D, lambda, alpha, max_iter, threshold, threshold2);
+toc
 X_descent = functions.get_X_from_XX(G);
 [Dt,X_descent] = procrustes(coords, X_descent');
 error_descent = norm(coords - X_descent, 'fro');
 
 % Plot True and Estimated Coordinates on a Map of the Netherlands
-common_functions.plot_locations_general(coords, station_index, X_descent, "Gradient Descent Estimated Locations")
+common_functions.plot_locations_general(coords, station_index, X_descent, "PDG Estimate", error_descent)
 
 figure(2)
 plot(k_vals, function_vals)
 
 %% Plot error for different lambda
-figure(2)
+f1 = figure;
+f2 = figure;
 hold on
 lambda_vals = linspace(0.1, 1, 10);
-alpha_vals = [0.1, 0.2, 0.3, 0.4, 0.5];
+alpha_vals = [0.1];
 
 for a = 1:length(alpha_vals)
     error_vals = [];
+    ks = [];
     alpha = alpha_vals(a); 
     for i = 1:length(lambda_vals)
-        lambda_vals(i),
-        [G, function_vals, k_vals] = gd(G_original, D, lambda_vals(i), alpha, max_iter, threshold);
+        [G, function_vals, k_vals, k, converged] = gd(G_original, D, lambda_vals(i), alpha, max_iter, threshold, threshold2);
         X_descent = functions.get_X_from_XX(G);
         [Dt,X_descent] = procrustes(coords, X_descent');
         error_val = norm(coords - X_descent, 'fro');
         error_vals = [error_vals, error_val];
+        ks = [ks, k];
+        sprintf("a = %0d, l = %0d, k = %0d, converged = %0d", alpha_vals(a), lambda_vals(i), k, converged)
     end
+    figure(f1)
+    hold on
     plot(lambda_vals, error_vals, 'o-', 'LineWidth', 2, 'DisplayName', sprintf('\\alpha = %0d', alpha));
     xlabel('\lambda (Regularization Factor)');
     ylabel('Reconstruction Error (Frobenius Norm)');
     title('Error vs. \lambda');
+    legend
+    ax = gca; 
+    ax.FontSize = 16; 
+
+    figure(f2)
+    hold on
+    plot(lambda_vals, ks, 'o-', 'LineWidth', 2, 'DisplayName', sprintf('\\alpha = %0d', alpha));
+    xlabel('\lambda (Regularization Factor)');
+    ylabel('Number of iterations');
+    title('Number of iterations vs. \lambda');
     legend
     ax = gca; 
     ax.FontSize = 16; 
@@ -62,7 +80,7 @@ legend show
 %% Define functions
 function gradient = calculate_gradient(G, D, lambda)
     n = size(D,1);
-    epsilon = 1e-6;
+    epsilon = 1e-10;
     f1 = obj_function(G, D, lambda);
     gradient = zeros(n, n);
 
@@ -79,7 +97,7 @@ end
 function f = obj_function(G, D, lambda)
     n = size(D,1);
     e = ones(n,1);
-    edm = diag(G)*e' + e*diag(G)' - 2*G;
+    edm = norm(D,2)*(diag(G)*e' + e*diag(G)' - 2*G);
     f = trace(G) + lambda*norm((edm-D), 'fro');
 end
 
@@ -87,6 +105,7 @@ function gradient = get_gradient(G, D, lambda)
     n = size(D,1);
     e = ones(n,1);
 
+    % Find the EDM and normalize it using the norm of the D matrix
     edm = diag(G)*e' + e*diag(G)' - 2*G;
     edm = norm(D,2).*edm;
 
@@ -119,17 +138,16 @@ function gradient = get_gradient(G, D, lambda)
 
 end
 
-function [G, function_vals, k_vals, k, converged] = gd(G, D, lambda, alpha, max_iter, threshold)
+function [G, function_vals, k_vals, k, converged] = gd(G, D, lambda, alpha, max_iter, threshold, threshold2)
     function_vals = [];
     k_vals = [];
     
     n = size(D,1);
     e = ones(n,1);
     edm = diag(G)*e' + e*diag(G)' - 2*G;
-    min_value = trace(G) + lambda*norm((edm-D), 'fro');
+    function_val_start = norm(D,2)*(trace(G) + lambda*norm((edm-D), 'fro'));
+    min_value = function_val_start;
     min_G = G;
-    
-    converged = 0;
 
     for k = 1:max_iter
 
@@ -145,29 +163,37 @@ function [G, function_vals, k_vals, k, converged] = gd(G, D, lambda, alpha, max_
         Gnew = Q * L * Q';
 
         % Constrain G1 = 0
-        for (i = 1:n)
+        for i = 1:n
             mean_row = mean(Gnew(i,:));  
             Gnew(i,:) = Gnew(i,:) - mean_row;
         end
 
+        delta = norm(G-Gnew);
         G = Gnew;
 
-        edm = diag(G)*e' + e*diag(G)' - 2*G;
+        edm = norm(D,2)*(diag(G)*e' + e*diag(G)' - 2*G);
         function_val = trace(G) + lambda*norm((edm-D), 'fro');
-        if (abs((function_val - min_value))/min_value < threshold)
-            converged = 1;
+       
+        if (delta < threshold)
             break; 
-        else 
-            min_value = function_val;
-            min_G = Gnew;
-        end
+        end 
         
-        % Get the error every 100 time steps for plotting
+        if (function_val < min_value)
+            min_value = function_val;
+            min_G = G;
+        end
+
+        % Get the error every 2 time steps for plotting
         if (mod(k, 2) == 1)
             k_vals = [k_vals, k];
             function_vals = [function_vals, function_val];
         end
 
     end
+    edm = norm(D,2)*(diag(G)*e' + e*diag(G)' - 2*G);
+    function_val = trace(G) + lambda*norm((edm-D), 'fro');
+    gradient_norm = norm(get_gradient(G, D, lambda), 2);
     G = min_G;
+    converged = (gradient_norm < threshold2 && function_val_start > function_val && ~(max(abs(eig(G))) < 1e-15));
+
 end
