@@ -3,22 +3,24 @@ load('mds_train.mat')
 functions = common_functions;
 
 %% Define the distance/time matrix
-D = time_matrix.^2;
+D = distance.^2;
 n = size(D,1);
-lambda = 0.3; 
+lambda = 0.4; 
 
 %% Get estimated coordinates 
-[G_sdr, X_sdr] = sdr(D, n, lambda);
+[G_sdr, X_cvx] = cvx_alg(D, n, lambda);
 X_mds = mds(D, n);
 
 %% Perform Procrustes rotation
 [Dt,X_mds] = procrustes(coords, X_mds');
-[Dt,X_sdr] = procrustes(coords, X_sdr');
+[Dt,X_cvx] = procrustes(coords, X_cvx');
 
 %% Plot True and Estimated Coordinates on a Map of the Netherlands
-label1 = "MDS Estimated Locations";
-label2 = "SDR Estimated Locations";
-common_functions.plot_locations_general(coords, station_index, X_mds, label1, X_sdr, label2);
+label1 = "MDS Estimate";
+label2 = "CVX Estimate";
+error_mds = norm(coords - X_mds, 'fro');
+error_cvx = norm(coords - X_cvx, 'fro');
+common_functions.plot_locations_general(coords, station_index, X_mds, label1, error_mds, X_cvx, label2, error_cvx);
 
 %% Justify choosing lambda
 
@@ -29,8 +31,8 @@ X_lambda = zeros(2,n,size(lambda_values,2));
 
 for i = 1:length(lambda_values)
     lambda = lambda_values(i); 
-    % Estimate coordinates using SDR
-    [G_lambda(:,:,i), X_lambda(:,:,i)] = sdr(D, n, lambda);
+    % Estimate coordinates using CVX
+    [G_lambda(:,:,i), X_lambda(:,:,i)] = cvx_alg(D, n, lambda);
 end
 
 % Call the function to evaluate and plot error
@@ -50,16 +52,15 @@ function X = mds(edm, n)
     X = common_functions.get_X_from_XX(XX);
 end
 
-% SDR problem
 % Semi-definite relaxation problem to complete an EDM - see EDM paper
-function [G, X] = sdr(D, n, lambda)
+function [G, X] = cvx_alg(D, n, lambda)
     % Some variables needed for the convex problem
     x = -1/(n+sqrt(n));
     y = -1/sqrt(n);
     V = [y*ones(1,n-1);x*ones(n-1)+eye(n-1)];
     e = ones(n,1);
 
-    % Solve the SDR convex problem using CVX
+    % Solve the convex problem using CVX
     cvx_begin sdp
         variable H(n-1, n-1) symmetric
         G = V*H*V';
@@ -91,7 +92,8 @@ function plot_error_vs_lambda(X_lambda, coords, lambda_values)
     ylabel('Reconstruction Error (Frobenius Norm)');
     title('Error vs. \lambda');
     legend('Reconstruction Error');
-
+    ax = gca; 
+    ax.FontSize = 16; 
 end
 
 % Eigenvalues vs. lambda (log scale)
@@ -127,4 +129,6 @@ function plot_eigenvalues_vs_lambda(G_lambda, lambda_values)
     title('Eigenvalues of Gram Matrix vs. \lambda');
     set(gca, 'YScale', 'log')
     legend('show');
+    ax = gca; 
+    ax.FontSize = 16; 
 end
